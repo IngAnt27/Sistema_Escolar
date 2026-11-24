@@ -1,8 +1,8 @@
-import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { createServerClient } from '@supabase/ssr'
 
 export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request })
+  let response = NextResponse.next({ request })
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,10 +13,12 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({ request })
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value)
+          )
+          response = NextResponse.next({ request })
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+            response.cookies.set(name, value, options)
           )
         },
       },
@@ -24,44 +26,29 @@ export async function middleware(request: NextRequest) {
   )
 
   const { data: { user } } = await supabase.auth.getUser()
-  const path = request.nextUrl.pathname
+  const { pathname } = request.nextUrl
 
-  // 1. Si no está autenticado y quiere entrar al dashboard, mandar al login
-  if (!user && path.startsWith('/dashboard')) {
+  // 1. Proteger todo /dashboard si no hay sesión
+  if (pathname.startsWith('/dashboard') && !user) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  // 2. Si está autenticado y entra al login, mandar al dashboard
-  if (user && path === '/login') {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
-  }
-
-  // 3. Control estricto por Roles (RBAC) dentro del dashboard
-  if (user && path.startsWith('/dashboard')) {
+  // 2. Proteger rutas exclusivas de Director (RBAC)
+  if (pathname.startsWith('/dashboard/pagos') && user) {
     const { data: perfil } = await supabase
       .from('perfiles')
-      .select('rol, activo')
+      .select('rol')
       .eq('id', user.id)
       .single()
 
-    // Bloquear usuarios desactivados
-    if (!perfil || !perfil.activo) {
-      return NextResponse.redirect(new URL('/login?error=cuenta_inactiva', request.url))
-    }
-
-    // Reglas por ruta según el rol
-    if (path.startsWith('/dashboard/pagos') && !['director', 'cajero'].includes(perfil.rol)) {
-      return NextResponse.redirect(new URL('/dashboard?error=sin_permiso', request.url))
-    }
-
-    if (path.startsWith('/dashboard/usuarios') && perfil.rol !== 'director') {
-      return NextResponse.redirect(new URL('/dashboard?error=sin_permiso', request.url))
+    if (perfil?.rol !== 'director') {
+      return NextResponse.redirect(new URL('/dashboard', request.url))
     }
   }
 
-  return supabaseResponse
+  return response
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/login'],
+  matcher: ['/dashboard/:path*'],
 }
