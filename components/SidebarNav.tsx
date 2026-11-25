@@ -54,8 +54,8 @@ export function SidebarNav({ nombreUsuario, rol }: SidebarNavProps) {
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-600/30">
             <GraduationCap className="h-5 w-5" />
           </div>
-          <span className="text-base font-bold tracking-tight text-white">
-            Sistema Escolar
+          <span className="text-lg font-black tracking-wider text-white">
+            KORA
           </span>
         </Link>
         <button
@@ -127,7 +127,7 @@ export function SidebarNav({ nombreUsuario, rol }: SidebarNavProps) {
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600">
             <GraduationCap className="h-4 w-4" />
           </div>
-          <span className="text-sm font-bold">Sistema Escolar</span>
+          <span className="text-sm font-black tracking-wider">KORA</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium capitalize text-emerald-300">
@@ -149,7 +149,7 @@ export function SidebarNav({ nombreUsuario, rol }: SidebarNavProps) {
         </div>
       )}
 
-      <aside className="hidden w-64 shrink-0 md:block print:hidden">
+      <aside className="hidden w-64 shrink-0 md:flex md:flex-col print:hidden">
         <div className="sticky top-0 h-screen">{contenidoMenu}</div>
       </aside>
 

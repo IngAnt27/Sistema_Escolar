@@ -16,7 +16,16 @@ const crearEstudianteSchema = z.object({
   telefono_encargado: z
     .string()
     .trim()
-    .regex(/^\+502\d{8}$/, 'El teléfono debe tener el formato +502 seguido de 8 dígitos.'),
+    .regex(
+      /^\+502\d{8}$/,
+      'El teléfono debe tener el formato +502 seguido de 8 dígitos.'
+    ),
+  foto_url: z
+    .string()
+    .trim()
+    .url('URL de fotografía inválida.')
+    .nullable()
+    .optional(),
 })
 
 export type CrearEstudianteInput = z.infer<typeof crearEstudianteSchema>
@@ -31,7 +40,9 @@ export async function crearEstudiante(datos: CrearEstudianteInput) {
   const supabase = await createClient()
 
   // 2. Verificar sesión activa
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
     return { error: 'Sesión expirada. Inicia sesión nuevamente.' }
   }
@@ -52,6 +63,7 @@ export async function crearEstudiante(datos: CrearEstudianteInput) {
     .from('estudiantes')
     .insert({
       ...validacion.data,
+      foto_url: validacion.data.foto_url ?? null,
       activo: true,
     })
     .select('id')
