@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   CheckCircle2,
@@ -18,6 +18,25 @@ import {
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { crearEstudiante } from '@/app/actions/estudiantes'
+
+function obtenerExtensionArchivo(archivo: Blob | File): string {
+  if ('name' in archivo && typeof archivo.name === 'string') {
+    const partes = archivo.name.split('.')
+    if (partes.length > 1) {
+      const ext = partes[partes.length - 1]?.trim().toLowerCase()
+      if (ext) return ext
+    }
+  }
+
+  if (archivo.type) {
+    const subtipo = archivo.type.split('/')[1]?.trim().toLowerCase()
+    if (subtipo) {
+      return subtipo === 'jpeg' ? 'jpg' : subtipo
+    }
+  }
+
+  return 'jpg'
+}
 
 export function FormularioEstudiante() {
   const router = useRouter()
@@ -41,6 +60,7 @@ export function FormularioEstudiante() {
   const [camaraActiva, setCamaraActiva] = useState(false)
   const [errorCamara, setErrorCamara] = useState<string | null>(null)
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user')
+  const [reinicioCamara, setReinicioCamara] = useState(0)
   const [fotoRespaldoUrl, setFotoRespaldoUrl] = useState<string | null>(null)
   const [fotoRespaldoFile, setFotoRespaldoFile] = useState<File | null>(null)
 
@@ -51,35 +71,40 @@ export function FormularioEstudiante() {
   const nombreCompleto =
     `${nombres.trim()} ${apellidos.trim()}`.trim() || 'Nombre del Estudiante'
 
-  const detenerCamara = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop())
-      streamRef.current = null
-    }
-    setCamaraActiva(false)
-  }, [])
+  useEffect(() => {
+    let cancelado = false
 
-  const iniciarCamara = useCallback(
-    async (modo: 'user' | 'environment') => {
-      detenerCamara()
-      setErrorCamara(null)
+    async function abrirCamara() {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop())
+        streamRef.current = null
+      }
 
       if (!navigator.mediaDevices?.getUserMedia) {
-        setErrorCamara('Tu navegador no soporta cámara directa.')
+        if (!cancelado) {
+          setCamaraActiva(false)
+          setErrorCamara('Tu navegador no soporta cámara directa.')
+        }
         return
       }
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
-            facingMode: { ideal: modo },
+            facingMode: { ideal: facingMode },
             width: { ideal: 640 },
             height: { ideal: 640 },
           },
           audio: false,
         })
 
+        if (cancelado) {
+          stream.getTracks().forEach((track) => track.stop())
+          return
+        }
+
         streamRef.current = stream
+        setErrorCamara(null)
         setCamaraActiva(true)
 
         if (videoRef.current) {
@@ -87,21 +112,33 @@ export function FormularioEstudiante() {
           await videoRef.current.play()
         }
       } catch {
-        setErrorCamara(
-          'No se pudo acceder a la cámara. Revisa permisos o usa subir archivo.'
-        )
-        setCamaraActiva(false)
+        if (!cancelado) {
+          setCamaraActiva(false)
+          setErrorCamara(
+            'No se pudo acceder a la cámara. Revisa permisos o usa subir archivo.'
+          )
+        }
       }
-    },
-    [detenerCamara]
-  )
-
-  useEffect(() => {
-    iniciarCamara(facingMode)
-    return () => {
-      detenerCamara()
     }
-  }, [facingMode, iniciarCamara, detenerCamara])
+
+    void abrirCamara()
+
+    return () => {
+      cancelado = true
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop())
+        streamRef.current = null
+      }
+    }
+  }, [facingMode, reinicioCamara])
+
+  function detenerCamaraActual() {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop())
+      streamRef.current = null
+    }
+    setCamaraActiva(false)
+  }
 
   function alternarCamara() {
     setFotoRespaldoUrl(null)
@@ -127,7 +164,7 @@ export function FormularioEstudiante() {
     if (fotoRespaldoUrl) URL.revokeObjectURL(fotoRespaldoUrl)
     setFotoRespaldoFile(file)
     setFotoRespaldoUrl(URL.createObjectURL(file))
-    detenerCamara()
+    detenerCamaraActual()
   }
 
   function limpiarFormulario() {
@@ -141,7 +178,7 @@ export function FormularioEstudiante() {
     setFotoRespaldoFile(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
     setMensaje(null)
-    iniciarCamara(facingMode)
+    setReinicioCamara((n) => n + 1)
   }
 
   // Captura automáticamente el fotograma actual del video al guardar
@@ -203,16 +240,14 @@ export function FormularioEstudiante() {
 
     if (archivoParaSubir) {
       const supabase = createClient()
-      const esFile = archivoParaSubir instanceof File
-      const extension = esFile
-        ? archivoParaSubir.name.split('.').pop()?.toLowerCase() || 'jpg'
-        : 'jpg'
+      const extension = obtenerExtensionArchivo(archivoParaSubir)
       const nombreArchivo = `${codigoPersonal.trim() || 'est'}-${Date.now()}.${extension}`
+      const tipoContenido = archivoParaSubir.type || 'image/jpeg'
 
       const { error: errorSubida } = await supabase.storage
         .from('fotos-estudiantes')
         .upload(nombreArchivo, archivoParaSubir, {
-          contentType: esFile ? archivoParaSubir.type : 'image/jpeg',
+          contentType: tipoContenido,
           upsert: true,
         })
 
